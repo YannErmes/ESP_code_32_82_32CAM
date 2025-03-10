@@ -1,0 +1,190 @@
+#include <ESP8266WiFi.h>
+#include <ArduinoJson.h>
+
+// Configuration WiFi
+const char* ssid = "N1";
+const char* password = "yannyann";
+WiFiServer server(80);
+
+
+int Led1 = D1 ;
+int Led2 = D2 ;
+
+
+
+
+
+
+// Fonction d'initialisation
+void setup() {
+  Serial.begin(115200);
+  Serial.println();
+  connecterWiFi();
+  afficherInfosESP();
+  // Démarrer le serveur
+  server.begin();
+
+  // Ajout de code dans le setup
+
+pinMode(Led1 , OUTPUT); 
+pinMode(Led2 , OUTPUT); 
+
+
+
+
+
+}
+
+void loop() {
+  gererClients();
+
+}
+
+// Traitement des message envoiye par phone 
+void traiterRequete(WiFiClient& client, String request) {
+  if (request.indexOf("/get_info") != -1) {
+     handleGetInfo(client);
+    }else {
+
+
+
+
+      // ecrire vos code et condition 
+      if (request.indexOf("/led1") != -1) {
+        digitalWrite(Led1 , HIGH) ;
+        Serial.print("la led1  est OK ");
+
+      } else if (request.indexOf("/temp") != -1) {
+        digitalWrite(Led1 , HIGH) ;
+        Serial.print("la led1  est OK ");
+         StaticJsonDocument<512> docu;
+        docu["Ecran1"] = "110";
+        String jsonResponse;
+        serializeJson(docu, jsonResponse);
+         client.println("HTTP/1.1 200 OK");
+        client.println("Content-Type: application/json");
+        client.println("Connection: close");
+        client.println();
+          client.println(jsonResponse);
+       
+        
+
+      }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   
+  
+  
+  }
+}
+
+
+
+//--------reponse json ------//
+
+/*   StaticJsonDocument<512> docu;
+       StaticJsonDocument<512> docu;
+        docu["Ecran1"] = "10";
+        String jsonResponse;
+        serializeJson(docu, jsonResponse);
+         client.println("HTTP/1.1 200 OK");
+        client.println("Content-Type: application/json");
+        client.println("Connection: close");
+        client.println();
+          client.println(jsonResponse);
+*/
+
+
+
+
+
+        // --------ne pas modifier -------- //
+
+// Gestion des clients
+void gererClients() {
+  WiFiClient client = server.available();
+  if (!client) return;
+
+  Serial.println("Nouveau client connecté !");
+  String request = client.readStringUntil('\r');
+  Serial.println("Requête: " + request);
+
+  traiterRequete(client, request);
+}
+
+
+// Connexion au WiFi
+void connecterWiFi() {
+  Serial.printf("Connexion à %s", ssid);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nConnecté !");
+}
+
+// Affichage des informations du module ESP8266
+void afficherInfosESP() {
+  Serial.println("=================================");
+  Serial.println("Informations du module ESP8266:");
+  Serial.println("Adresse IP: " + WiFi.localIP().toString());
+  Serial.println("Adresse MAC: " + WiFi.macAddress());
+  Serial.printf("Puissance du Signal WiFi (RSSI) : %d dBm\n", WiFi.RSSI());
+  Serial.println("Adresse IP de la passerelle: " + WiFi.gatewayIP().toString());
+  Serial.printf("Utilisation de la mémoire RAM: %d bytes\n", ESP.getFreeHeap());
+  Serial.printf("Mémoire Flash disponible: %d bytes (%.2f Mo)\n", ESP.getFlashChipSize(), ESP.getFlashChipSize() / 1048576.0);
+  Serial.printf("Temps de fonctionnement : %lu ms\n", millis());
+  Serial.println("=================================");
+}
+
+
+// Envoi d'une réponse HTML
+void sendHtmlResponse(WiFiClient& client, String message) {
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/html");
+  client.println("Connection: close");
+  client.println();
+  client.println("<!DOCTYPE HTML>");
+  client.println("<html>");
+  client.println("<h1>ESP8266 Server</h1>");
+  client.println("<p>" + message + "</p>");
+  client.println("</html>");
+}
+
+// Récupération des informations ESP et envoi en JSON
+void handleGetInfo(WiFiClient& client) {
+  StaticJsonDocument<512> doc;
+  doc["Wifi"] = WiFi.SSID();
+  doc["ip_address"] = WiFi.localIP().toString();
+  doc["mac_address"] = WiFi.macAddress();
+  doc["signal_strength"] = WiFi.RSSI();
+  doc["gateway_ip"] = WiFi.gatewayIP().toString();
+  doc["free_memory"] = ESP.getFreeHeap();
+  doc["flash_memory"] = ESP.getFlashChipSize();
+
+  String jsonResponse;
+  serializeJson(doc, jsonResponse);
+
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: application/json");
+  client.println("Connection: close");
+  client.println();
+  client.println(jsonResponse);
+}

@@ -1,81 +1,126 @@
 #include <ESP8266WiFi.h>
+#include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
-#include <Servo.h>
 
-// Configuration WiFi
+// Wi-Fi credentials
 const char* ssid = "N1";
 const char* password = "yannyann";
-WiFiServer server(80);
 
-// Définition des broches
-int capteur1 = D1;
-int ledTemoin = D6;
+// Serveur et WebSocket
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
 
-void setup() {
-  Serial.begin(115200);
-  connecterWiFi();
-  afficherInfosESP();
-  server.begin();
+// Variables globales
+String lastCommand = "";
+String statusMessage = "";
+String ecran2 = "700";
+String indicateur1 = "0.36";
+String bulb1 = "true";
+String bulb2 = "true";
 
-  // Initialisation des broches
-  pinMode(capteur1, INPUT);
-  pinMode(ledTemoin, OUTPUT);
-}
+unsigned long lastUpdateTime = 0; // ← Ajout
 
-void loop() {
-  gererClients();
-  delay(500);
-}
 
-// ------------------ GESTION DES CLIENTS ------------------
+// lutiliserles pin 
+int del = D1 ;
 
-void gererClients() {
-  WiFiClient client = server.available();
-  if (!client) return;
+void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+                      AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    Serial.println("✅ WebSocket client connected");
+  } 
+  else if (type == WS_EVT_DATA) {
+    String msg = "";
+    for (size_t i = 0; i < len; i++) {
+      msg += (char)data[i];
+    }
 
-  Serial.println("Nouveau client connecté !");
-  String request = client.readStringUntil('\r');
-  Serial.println("Requête: " + request);
+    Serial.print("📩 Received command: ");
+    Serial.println(msg);
 
-  traiterRequete(client, request);
-}
-
-// ------------------ ROUTEUR DE REQUÊTES ------------------
-
-void traiterRequete(WiFiClient& client, String request) {
-  if (request.indexOf("/get_info") != -1) {
-    handleGetInfo(client);
-  } else if (digitalRead(capteur1) == HIGH) {
-    txt_reponse(client,"there is an object  ," );
-     Serial.println("obb");
-   
-  } else {
-    // txt_reponse(client,"yann" );
+    lastCommand = msg;
   }
 }
 
-// ------------------ RÉPONSES JSON ------------------
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
 
-void txt_reponse(WiFiClient& client , String message) {
-  StaticJsonDocument<512> docue;
-  // ajouter la variable et le nom de l'ecan
-docue["reponse"] = message;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\n✅ WiFi connected");
 
-  
-  String jsonResponse;
-  serializeJson(docue, jsonResponse);
+  ws.onEvent(onWebSocketEvent);
+  server.addHandler(&ws);
+  server.begin();
 
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: application/json");
-  client.println("Connection: close");
-  client.println();
-  client.println(jsonResponse);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); 
+
+  // set fin
+
+  pinMode(del, INPUT);
 
 }
 
+void loop() {
+  // 🔁 Lecture de la commande WebSocket
+  if (lastCommand.length() > 0) {
+    if (lastCommand == "tg2on") {
+      digitalWrite(LED_BUILTIN, LOW);
+      statusMessage = "LED turned ON";
+      bulb1 = "true";
+    } 
+    else if (lastCommand == "tg2off") {
+      digitalWrite(LED_BUILTIN, HIGH);
+      statusMessage = "LED turned OFF";
+      bulb1 = "false";
+    } 
+    else {
+      statusMessage = "Unknown command";
+    }
 
-void handleGetInfo(WiFiClient& client) {
-  StaticJsonDocument<512> doc;
+    sendJSONResponse();
+    lastCommand = "";
+  }
+
+  // ✅ Auto-update toutes les secondes
+  // if (millis() - lastUpdateTime > 1000) {
+  //   int val = random(500, 900);
+  //   float ind = random(20, 60) / 100.0;
+
+  //   ecran2 = String(val);
+  //   indicateur1 = String(ind, 2);
+
+  //   statusMessage = "📡 Auto-update";
+  //   sendJSONResponse();
+
+  //   lastUpdateTime = millis();
+  // }
+}
+
+
+
+
+
+void sendJSONResponse() {
+
+  
+  StaticJsonDocument<200> doc;
+  doc["status"] = "ok";
+  doc["message"] = statusMessage;
+  doc["Ecran2"] = ecran2;
+  doc["Indicateur1"] = indicateur1;
+  doc["bulb1"] = bulb1;
+  doc["bulb2"] = bulb2;
+
+
+
+
+
+
   doc["Wifi"] = WiFi.SSID();
   doc["ip_address"] = WiFi.localIP().toString();
   doc["mac_address"] = WiFi.macAddress();
@@ -84,41 +129,16 @@ void handleGetInfo(WiFiClient& client) {
   doc["free_memory"] = ESP.getFreeHeap();
   doc["flash_memory"] = ESP.getFlashChipSize();
 
-  String jsonResponse;
-  serializeJson(doc, jsonResponse);
 
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: application/json");
-  client.println("Connection: close");
-  client.println();
-  client.println(jsonResponse);
 
-  
+ 
+ 
+
+  String response;
+  serializeJson(doc, response);
+  ws.textAll(response);
+
+  Serial.println("📤 Sent JSON: " + response);
 }
 
-// ------------------ FONCTIONS WiFi ------------------
 
-void connecterWiFi() {
-  Serial.printf("Connexion à %s", ssid);
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("\nConnecté !");
-}
-
-void afficherInfosESP() {
-  Serial.println("=================================");
-  Serial.println("Informations du module ESP8266:");
-  Serial.println("Adresse IP: " + WiFi.localIP().toString());
-  Serial.println("Adresse MAC: " + WiFi.macAddress());
-  Serial.printf("Puissance du Signal WiFi (RSSI) : %d dBm\n", WiFi.RSSI());
-  Serial.println("Adresse IP de la passerelle: " + WiFi.gatewayIP().toString());
-  Serial.printf("Utilisation de la mémoire RAM: %d bytes\n", ESP.getFreeHeap());
-  Serial.printf("Mémoire Flash disponible: %d bytes (%.2f Mo)\n", ESP.getFlashChipSize(), ESP.getFlashChipSize() / 1048576.0);
-  Serial.printf("Temps de fonctionnement : %lu ms\n", millis());
-  Serial.println("=================================");
-}

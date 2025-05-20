@@ -51,6 +51,9 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("\n✅ WiFi connected");
+   // Print the IP address to the Serial monitor
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
 
   ws.onEvent(onWebSocketEvent);
   server.addHandler(&ws);
@@ -140,5 +143,4 @@ void sendJSONResponse() {
 
   Serial.println("📤 Sent JSON: " + response);
 }
-
 

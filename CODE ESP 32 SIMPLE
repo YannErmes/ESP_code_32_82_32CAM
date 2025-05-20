@@ -1,112 +1,128 @@
 #include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 
-// Configuration WiFi
+// Wi-Fi credentials
 const char* ssid = "N1";
 const char* password = "yannyann";
-WiFiServer server(80);
 
-// Définition des broches
-const int Led1 = 5;  // GPIO 5 (D1 sur certains modules)
-const int Led2 = 18; // GPIO 18 (D2 sur certains modules)
+// Server and WebSocket
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+// Global variables
+String lastCommand = "";
+String statusMessage = "";
+String ecran2 = "700";
+String indicateur1 = "0.36";
+String bulb1 = "true";
+String bulb2 = "true";
+
+unsigned long lastUpdateTime = 0;
+
+// Use pin
+int del = 2; // Example pin for ESP32
+
+void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+                      AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    Serial.println("✅ WebSocket client connected");
+  }
+  else if (type == WS_EVT_DATA) {
+    String msg = "";
+    for (size_t i = 0; i < len; i++) {
+      msg += (char)data[i];
+    }
+
+    Serial.print("📩 Received command: ");
+    Serial.println(msg);
+
+    lastCommand = msg;
+  }
+}
 
 void setup() {
-    Serial.begin(115200);
-    connecterWiFi();
-    afficherInfosESP();
-    
-    pinMode(Led1, OUTPUT);
-    pinMode(Led2, OUTPUT);
-    
-    server.begin();
-    Serial.println("Serveur démarré !");
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\n✅ WiFi connected");
+
+  // Print the IP address to the Serial monitor
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  ws.onEvent(onWebSocketEvent);
+  server.addHandler(&ws);
+  server.begin();
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+
+  // Set pin
+  pinMode(del, INPUT);
 }
 
 void loop() {
-    gererClients();
-}
-
-// Gestion des clients WiFi
-void gererClients() {
-    WiFiClient client = server.available();
-    if (!client) return;
-
-    Serial.println("Nouveau client connecté !");
-    String request = client.readStringUntil('\r');
-    Serial.println("Requête reçue: " + request);
-    traiterRequete(client, request);
-}
-
-// Traitement des requêtes
-void traiterRequete(WiFiClient& client, String request) {
-    if (request.indexOf("/get_info") != -1) {
-        handleGetInfo(client);
-    } else if (request.indexOf("/led1/on") != -1) {
-        digitalWrite(Led1, HIGH);
-        sendJsonResponse(client, "Led1 allumée");
-    } else if (request.indexOf("/led1/off") != -1) {
-        digitalWrite(Led1, LOW);
-        sendJsonResponse(client, "Led1 éteinte");
-    } else if (request.indexOf("/led2/on") != -1) {
-        digitalWrite(Led2, HIGH);
-        sendJsonResponse(client, "Led2 allumée");
-    } else if (request.indexOf("/led2/off") != -1) {
-        digitalWrite(Led2, LOW);
-        sendJsonResponse(client, "Led2 éteinte");
-    } else {
-        sendJsonResponse(client, "Commande inconnue");
+  // 🔁 Read WebSocket command
+  if (lastCommand.length() > 0) {
+    if (lastCommand == "tg2on") {
+      digitalWrite(LED_BUILTIN, LOW);
+      statusMessage = "LED turned ON";
+      bulb1 = "true";
     }
-}
-
-// Connexion au WiFi
-void connecterWiFi() {
-    Serial.printf("Connexion à %s...", ssid);
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
+    else if (lastCommand == "tg2off") {
+      digitalWrite(LED_BUILTIN, HIGH);
+      statusMessage = "LED turned OFF";
+      bulb1 = "false";
     }
-    Serial.println("\nConnecté !");
+    else {
+      statusMessage = "Unknown command";
+    }
+
+    sendJSONResponse();
+    lastCommand = "";
+  }
+
+  // ✅ Auto-update every second
+  // if (millis() - lastUpdateTime > 1000) {
+  //   int val = random(500, 900);
+  //   float ind = random(20, 60) / 100.0;
+
+  //   ecran2 = String(val);
+  //   indicateur1 = String(ind, 2);
+
+  //   statusMessage = "📡 Auto-update";
+  //   sendJSONResponse();
+
+  //   lastUpdateTime = millis();
+  // }
 }
 
-// Affichage des infos de l'ESP32
-void afficherInfosESP() {
-    Serial.println("=================================");
-    Serial.println("Informations du module ESP32:");
-    Serial.println("Adresse IP: " + WiFi.localIP().toString());
-    Serial.println("Adresse MAC: " + WiFi.macAddress());
-    Serial.printf("Puissance du Signal WiFi (RSSI) : %d dBm\n", WiFi.RSSI());
-    Serial.println("=================================");
-}
+void sendJSONResponse() {
+  StaticJsonDocument<200> doc;
+  doc["status"] = "ok";
+  doc["message"] = statusMessage;
+  doc["Ecran2"] = ecran2;
+  doc["Indicateur1"] = indicateur1;
+  doc["bulb1"] = bulb1;
+  doc["bulb2"] = bulb2;
 
-// Réponse JSON
-void sendJsonResponse(WiFiClient& client, String message) {
-    StaticJsonDocument<256> doc;
-    doc["message"] = message;
-    String jsonResponse;
-    serializeJson(doc, jsonResponse);
-    
-    client.println("HTTP/1.1 200 OK");
-    client.println("Content-Type: application/json");
-    client.println("Connection: close");
-    client.println();
-    client.println(jsonResponse);
-}
+  doc["Wifi"] = WiFi.SSID();
+  doc["ip_address"] = WiFi.localIP().toString();
+  doc["mac_address"] = WiFi.macAddress();
+  doc["signal_strength"] = WiFi.RSSI();
+  doc["gateway_ip"] = WiFi.gatewayIP().toString();
+  doc["free_memory"] = ESP.getFreeHeap();
+  doc["flash_memory"] = ESP.getFlashChipSize();
 
-// Informations système en JSON
-void handleGetInfo(WiFiClient& client) {
-    StaticJsonDocument<512> doc;
-    doc["wifi"] = WiFi.SSID();
-    doc["ip_address"] = WiFi.localIP().toString();
-    doc["mac_address"] = WiFi.macAddress();
-    doc["signal_strength"] = WiFi.RSSI();
+  String response;
+  serializeJson(doc, response);
+  ws.textAll(response);
 
-    String jsonResponse;
-    serializeJson(doc, jsonResponse);
-    
-    client.println("HTTP/1.1 200 OK");
-    client.println("Content-Type: application/json");
-    client.println("Connection: close");
-    client.println();
-    client.println(jsonResponse);
+  Serial.println("📤 Sent JSON: " + response);
 }

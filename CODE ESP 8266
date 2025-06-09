@@ -35,6 +35,7 @@ void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventTyp
 // Exemple : int led_gauche = D1; // Définir la broche pour la LED de gauche
 
 /* ----------- Variables globales ----------- */
+String b = "true";
 
 void setup() {
   Serial.begin(115200); // Initialiser la communication série à 115200 bauds
@@ -42,7 +43,7 @@ void setup() {
   initWebSocket(); // Initialiser WebSocket
   pinMode(LED_BUILTIN, OUTPUT); // Définir la broche de la LED intégrée comme sortie
 
-  
+
 }
 
 void loop() {
@@ -80,9 +81,11 @@ void handleWebSocketCommand() {
 
   if (lastCommand == "tg2on") { // Allumer la LED
     digitalWrite(LED_BUILTIN, HIGH);
+    b = "true";
     statusMessage = "LED ALLUMÉE";
   } else if (lastCommand == "tg2off") { // Éteindre la LED
     digitalWrite(LED_BUILTIN, LOW);
+     b = "false";
     statusMessage = "LED ÉTEINTE";
   } else { // Commande inconnue
     statusMessage = "Commande inconnue";
@@ -97,19 +100,21 @@ void sendAutoUpdate() {
 
   // Ajouter l'état de la LED et d'autres données au document JSON
   
+ 
   doc["Ecran1"] = millis();
   doc["Ecran2"] = statusMessage;
   doc["Ecran3"] = digitalRead(LED_BUILTIN) == HIGH ? "on" : "off";
-  doc["Ecran4"] = digitalRead(LED_BUILTIN) == HIGH ? "on" : "off";
+  doc["Ecran4"] = b;
 
   doc["Indicateur1"] = 0.70;
   doc["Indicateur2"] = 0.30;
-  doc["Indicateur3"] = 0.94;
+  doc["Indicateur3"] = 0.54;
 
-  doc["buld1"]  =  "true";
-  doc["buld2"]  =  "true";
-  doc["buld3"]  =  "true";
-  doc["buld4"]  =  "true";
+ 
+  doc["bulb1"]  =   b;
+  doc["Bulb3"]  =  "false";
+  doc["Bulb4"]  =  "true";
+  doc["Bulb1"]  =  "false";
 
   // Ajouter les informations d'état de l'ESP au document JSON
   doc["status"] = "auto-update";

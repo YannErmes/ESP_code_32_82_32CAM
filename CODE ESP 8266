@@ -1,7 +1,6 @@
 
 
 
-
 // Inclure les bibliothèques nécessaires
 #include <ESP8266WiFi.h> // Bibliothèque pour la fonctionnalité Wi-Fi de l'ESP8266
 #include <ESPAsyncWebServer.h> // Bibliothèque pour la fonctionnalité de serveur web asynchrone
@@ -112,9 +111,9 @@ void sendAutoUpdate() {
 
  
   doc["bulb1"]  =   b;
-  doc["Bulb3"]  =  "false";
-  doc["Bulb4"]  =  "true";
-  doc["Bulb1"]  =  "false";
+  doc["Bulb2"]  =  "false";
+  doc["Bulb3"]  =  "true";
+  doc["Bulb4"]  =  "false";
 
   // Ajouter les informations d'état de l'ESP au document JSON
   doc["status"] = "auto-update";
@@ -184,3 +183,5 @@ void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventTyp
       break;
   }
 }
+
+

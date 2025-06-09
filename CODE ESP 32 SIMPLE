@@ -1,117 +1,95 @@
-#include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <ArduinoJson.h>
+#include <WiFi.h> // Bibliothèque Wi-Fi pour ESP32
+#include <AsyncTCP.h> // Bibliothèque pour le serveur WebSocket asynchrone
+#include <ESPAsyncWebServer.h> // Bibliothèque pour le serveur web asynchrone
+#include <ArduinoJson.h> // Bibliothèque pour la sérialisation et la désérialisation JSON
 
-// Wi-Fi credentials
-const char* ssid = "N1";
-const char* password = "yannyann";
+/* ----------- Configuration Wi-Fi ----------- */
+const char* WIFI_SSID = "N1"; // SSID du réseau Wi-Fi
+const char* WIFI_PASSWORD = "yannyany"; // Mot de passe du réseau Wi-Fi
 
-// Server and WebSocket
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");
+/* ----------- Configuration WebSocket ----------- */
+AsyncWebServer server(80); // Créer un serveur web asynchrone sur le port 80
+AsyncWebSocket ws("/ws"); // Créer un point de terminaison WebSocket à "/ws"
 
-// Global variables
-String lastCommand = "";
-String statusMessage = "";
-String ecran2 = "700";
-String indicateur1 = "0.36";
-String bulb1 = "true";
-String bulb2 = "true";
+/* ----------- Variables d'état globales ----------- */
+String lastCommand = ""; // Stocke la dernière commande reçue
+String statusMessage = ""; // Stocke le message d'état à envoyer
 
-unsigned long lastUpdateTime = 0;
+/* ----------- Minuterie pour la mise à jour automatique ----------- */
+unsigned long lastUpdateTime = 0; // Stocke le dernier temps de mise à jour
+const unsigned long updateInterval = 1000; // Intervalle de mise à jour défini à 1 seconde (1000 millisecondes)
 
-// Use pin
-int del = 2; // Example pin for ESP32
+/* ----------- Prototypes de fonctions ----------- */
+void initWiFi(); // Fonction pour initialiser la connexion Wi-Fi
+void initWebSocket(); // Fonction pour initialiser WebSocket
+void handleWebSocketCommand(); // Fonction pour gérer les commandes WebSocket
+void sendAutoUpdate(); // Fonction pour envoyer des mises à jour automatiques
+void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len); // Gestionnaire d'événements WebSocket
 
-void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
-                      AwsEventType type, void *arg, uint8_t *data, size_t len) {
-  if (type == WS_EVT_CONNECT) {
-    Serial.println("✅ WebSocket client connected");
-  }
-  else if (type == WS_EVT_DATA) {
-    String msg = "";
-    for (size_t i = 0; i < len; i++) {
-      msg += (char)data[i];
-    }
+/* ----------- Définitions des broches ----------- */
+// Exemple : int led_gauche = 2; // Définir la broche pour la LED de gauche
 
-    Serial.print("📩 Received command: ");
-    Serial.println(msg);
-
-    lastCommand = msg;
-  }
-}
+/* ----------- Variables globales ----------- */
+String b = "true";
 
 void setup() {
-  Serial.begin(115200);
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\n✅ WiFi connected");
-
-  // Print the IP address to the Serial monitor
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.localIP());
-
-  ws.onEvent(onWebSocketEvent);
-  server.addHandler(&ws);
-  server.begin();
-
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
-
-  // Set pin
-  pinMode(del, INPUT);
+  Serial.begin(115200); // Initialiser la communication série à 115200 bauds
+  initWiFi(); // Initialiser la connexion Wi-Fi
+  initWebSocket(); // Initialiser WebSocket
+  pinMode(LED_BUILTIN, OUTPUT); // Définir la broche de la LED intégrée comme sortie
 }
 
 void loop() {
-  // 🔁 Read WebSocket command
-  if (lastCommand.length() > 0) {
-    if (lastCommand == "tg2on") {
-      digitalWrite(LED_BUILTIN, LOW);
-      statusMessage = "LED turned ON";
-      bulb1 = "true";
-    }
-    else if (lastCommand == "tg2off") {
-      digitalWrite(LED_BUILTIN, HIGH);
-      statusMessage = "LED turned OFF";
-      bulb1 = "false";
-    }
-    else {
-      statusMessage = "Unknown command";
-    }
+  handleWebSocketCommand(); // Gérer les commandes WebSocket
 
-    sendJSONResponse();
-    lastCommand = "";
+  // Mise à jour régulière toutes les 1 seconde
+  if (millis() - lastUpdateTime > updateInterval) {
+    sendAutoUpdate(); // Envoyer la mise à jour automatique
+    lastUpdateTime = millis(); // Mettre à jour le dernier temps de mise à jour
   }
-
-  // ✅ Auto-update every second
-  // if (millis() - lastUpdateTime > 1000) {
-  //   int val = random(500, 900);
-  //   float ind = random(20, 60) / 100.0;
-
-  //   ecran2 = String(val);
-  //   indicateur1 = String(ind, 2);
-
-  //   statusMessage = "📡 Auto-update";
-  //   sendJSONResponse();
-
-  //   lastUpdateTime = millis();
-  // }
 }
 
-void sendJSONResponse() {
-  StaticJsonDocument<200> doc;
-  doc["status"] = "ok";
-  doc["message"] = statusMessage;
-  doc["Ecran2"] = ecran2;
-  doc["Indicateur1"] = indicateur1;
-  doc["bulb1"] = bulb1;
-  doc["bulb2"] = bulb2;
+/* ----------- Traitement des commandes ----------- */
+void handleWebSocketCommand() {
+  if (lastCommand.isEmpty()) return;
 
+  if (lastCommand == "tg2on") { // Allumer la LED
+    digitalWrite(LED_BUILTIN, HIGH);
+    b = "true";
+    statusMessage = "LED ALLUMÉE";
+  } else if (lastCommand == "tg2off") { // Éteindre la LED
+    digitalWrite(LED_BUILTIN, LOW);
+    b = "false";
+    statusMessage = "LED ÉTEINTE";
+  } else { // Commande inconnue
+    statusMessage = "Commande inconnue";
+  }
+
+  lastCommand = "";
+}
+
+/* ----------- Envoyer une mise à jour automatique ----------- */
+void sendAutoUpdate() {
+  StaticJsonDocument<192> doc; // Créer un document JSON
+
+  // Ajouter l'état de la LED et d'autres données au document JSON
+  doc["Ecran1"] = millis();
+  doc["Ecran2"] = statusMessage;
+  doc["Ecran3"] = digitalRead(LED_BUILTIN) == HIGH ? "on" : "off";
+  doc["Ecran4"] = b;
+
+  doc["Indicateur1"] = 0.70;
+  doc["Indicateur2"] = 0.30;
+  doc["Indicateur3"] = 0.54;
+
+  doc["bulb1"] = b;
+  doc["Bulb2"] = "false";
+  doc["Bulb3"] = "true";
+  doc["Bulb4"] = "false";
+
+  // Ajouter les informations d'état de l'ESP au document JSON
+  doc["status"] = "auto-update";
+  doc["message"] = statusMessage;
   doc["Wifi"] = WiFi.SSID();
   doc["ip_address"] = WiFi.localIP().toString();
   doc["mac_address"] = WiFi.macAddress();
@@ -120,9 +98,49 @@ void sendJSONResponse() {
   doc["free_memory"] = ESP.getFreeHeap();
   doc["flash_memory"] = ESP.getFlashChipSize();
 
-  String response;
-  serializeJson(doc, response);
-  ws.textAll(response);
+  String payload;
+  serializeJson(doc, payload); // Sérialiser le document JSON en chaîne de caractères
+  ws.textAll(payload); // Envoyer la chaîne JSON à tous les clients WebSocket
 
-  Serial.println("📤 Sent JSON: " + response);
+  Serial.println("🔄 Mise à jour automatique envoyée"); // Afficher le message de mise à jour envoyée
+}
+
+/* ----------- Initialisation Wi-Fi ----------- */
+void initWiFi() {
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD); // Se connecter au réseau Wi-Fi
+  Serial.print("Connexion au WiFi .."); // Afficher le message de connexion
+
+  while (WiFi.status() != WL_CONNECTED) { // Attendre la connexion
+    Serial.print('.'); // Afficher des points pendant la connexion
+    delay(1000); // Attendre 1 seconde
+  }
+
+  Serial.println(WiFi.localIP()); // Afficher l'adresse IP locale
+}
+
+/* ----------- Initialisation WebSocket ----------- */
+void initWebSocket() {
+  ws.onEvent(onWsEvent); // Définir le gestionnaire d'événements WebSocket
+  server.addHandler(&ws); // Ajouter le gestionnaire WebSocket au serveur
+  server.begin(); // Démarrer le serveur
+}
+
+/* ----------- Gestionnaire d'événements WebSocket ----------- */
+void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len) {
+  switch (type) {
+    case WS_EVT_CONNECT: // Client connecté
+      Serial.printf("Client WebSocket #%u connecté depuis %s\n", client->id(), client->remoteIP().toString().c_str());
+      break;
+    case WS_EVT_DISCONNECT: // Client déconnecté
+      Serial.printf("Client WebSocket #%u déconnecté\n", client->id());
+      break;
+    case WS_EVT_DATA: // Données reçues
+      AwsFrameInfo* info = (AwsFrameInfo*)arg;
+      if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+        data[len] = 0; // Terminer les données par un caractère nul
+        lastCommand = (char*)data; // Stocker la commande reçue
+        Serial.printf("Commande reçue : %s\n", (char*)data); // Afficher la commande reçue
+      }
+      break;
+  }
 }
